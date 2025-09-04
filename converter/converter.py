@@ -35,20 +35,15 @@ def load_part_studio_features():
     json.dump(response, f, indent=2)
 
 def load_faces():
-  response = onshape_request(f"https://cad.onshape.com/api/partstudios/d/{did}/{wvm}/{wvmid}/e/{eid}/tessellatedfaces?rollbackBarIndex=-1&outputFaceAppearances=true&outputVertexNormals=true&outputFacetNormals=false&outputTextureCoordinates=false&outputIndexTable=false&outputErrorFaces=false&combineCompositePartConstituents=false")
+  response = onshape_request(f"https://cad.onshape.com/api/partstudios/d/{did}/{wvm}/{wvmid}/e/{eid}/tessellatedfaces?rollbackBarIndex=-1&outputFaceAppearances=true&outputVertexNormals=true&outputFacetNormals=false&outputTextureCoordinates=false&outputIndexTable=false&outputErrorFaces=false&combineCompositePartConstituents=false&chordTolerance=0.0001&angleTolerance=1")
   with open("faces.json", "w") as f:
     json.dump(response, f, indent=2)
 
-def load_edges(did, wvm, wvmid, eid):
+def load_edges():
   print("loading edges")
-  response = requests.get(
-    "https://cad.onshape.com/api/partstudios/d/%s/%s/%s/e/%s/tessellatededges?rollbackBarIndex=-1" %
-    (did, wvm, wvmid, eid),
-    auth=(access_key, secret_key),
-    headers=headers,
-  )
+  response = onshape_request(f"https://cad.onshape.com/api/partstudios/d/{did}/{wvm}/{wvmid}/e/{eid}/tessellatededges?rollbackBarIndex=-1&chordTolerance=0.0001&angleTolerance=1")
   with open("edges.json", "w") as f:
-    json.dump(response.json(), f, indent=2)
+    json.dump(response, f, indent=2)
 
 def load_assembly():
   eid = "d2f73f6396ee11d44c08fc80"
@@ -64,10 +59,6 @@ did = chunks[chunks.index("documents") + 1]
 wvm = "w"
 wvmid = chunks[chunks.index("w") + 1]
 eid = chunks[chunks.index("e") + 1]
-# load_edges(did, wvm, wvmid, eid)
-# load_faces()
-# load_part_studio_features()
-# load_assembly()
 
 def base64_to_rgba(b64str):
   # Decode base64 to bytes
@@ -117,10 +108,7 @@ def load_parts():
                            process=False)
     if "color" in body:
       color = base64_to_rgba(body["color"])
-      print(body["id"], color)
-      #mesh.visual.vertex_colors = np.tile(color, (len(mesh.vertices), 1))
       mesh.visual.vertex_colors = color
-      # print(base64_to_rgba(body["color"]))
     scene.geometry[body["id"]] = mesh
 
   with open("assembly.json", "r") as f:
@@ -141,6 +129,8 @@ def load_parts():
       print(f"WARNING: geometry for {part_id} missing - skipped")
       continue
 
+    #if inst['name'] != "BEAM <1>":
+    #  continue
     print(f"{inst['name']} {part_id}")
 
     matrix44 = np.asarray(occ['transform'], float).reshape(4, 4)
@@ -151,4 +141,8 @@ def load_parts():
   with open("edges.glb", "wb") as f:
     f.write(glb)
 
+#load_edges()
+#load_faces()
+# load_part_studio_features()
+# load_assembly()
 load_parts()

@@ -27,13 +27,40 @@ function frameOrthoIsometric ( cam, ctrls, root, margin = 1.15 ) {
 
   ctrls.target.copy( centre );
   ctrls.update();
+
+  /* 3 - Set Near and Far Clipping Planes ✨ */
+  const modelRadius = size.divideScalar(2).length();
+  const camToCenterDist = cam.position.distanceTo(centre);
+  console.log(`Model radius: ${modelRadius}, Camera to center distance: ${camToCenterDist}`);
+
+  cam.near = camToCenterDist - modelRadius;
+  cam.far = camToCenterDist + modelRadius;
+  console.log(`Camera near: ${cam.near}, far: ${cam.far}`);
 }
 
 const lineMat = new THREE.LineBasicMaterial({
   color: 0x000000,
   depthTest: true,        // still respect occlusion by other parts
-  depthWrite: false       // but never overwrite the depth buffer
+  depthWrite: false,       // but never overwrite the depth buffer
 });
+
+lineMat.onBeforeCompile = function (shader) {
+  // Modify the vertex shader to pull the line slightly towards the camera
+  // This is necessary to ensure the line is always visible in the orthographic view
+  const finalLine = shader.vertexShader.lastIndexOf('}');
+
+  const injection = `
+    // Pull the line slightly towards the camera
+    // Scale by w to handle zoom nicely.
+    gl_Position.z -= 0.0005 * gl_Position.w;
+  `;
+
+  shader.vertexShader = [
+    shader.vertexShader.slice(0, finalLine),
+    injection,
+    shader.vertexShader.slice(finalLine)
+  ].join('\n');
+};
 
 const tex_loader = new THREE.TextureLoader();
 
@@ -45,7 +72,7 @@ const material = new THREE.MeshMatcapMaterial({
   vertexColors: true,
   polygonOffset: true,
   polygonOffsetFactor: 2,
-  polygonOffsetUnits: 2,
+  polygonOffsetUnits: 1,
 });
 
 const app = document.querySelector('#app');
@@ -56,8 +83,6 @@ scene.background = new THREE.Color(0xf0f0f0);
 
 // Set up camera
 const camera = new THREE.OrthographicCamera();
-camera.far = 5;
-updateCamera();
 
 // Set up renderer
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -70,12 +95,6 @@ app.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableRotate = true;
 controls.zoomSpeed = 1.5;
-
-// Add lighting
-// scene.add( new THREE.AmbientLight( 0xffffff, 0.3 ) );
-let directionalLight = new THREE.DirectionalLight( 0xffffff, 1.8 );
-directionalLight.position.set( 0, -1, 0 ).normalize();
-//scene.add(directionalLight);
 
 const pmrem = new THREE.PMREMGenerator( renderer );
 scene.environment = pmrem.fromScene( new RoomEnvironment(), 0.04 ).texture;
@@ -93,13 +112,8 @@ loader.load(
     model.traverse((child) => {
       if (child.isMesh) {
         child.material = material;
+        child.renderOrder = 0;
         /*
-        child.material = new THREE.MeshPhongMaterial({
-          vertexColors: true,
-          polygonOffset: true,
-          polygonOffsetFactor: 2,
-          polygonOffsetUnits: 2,
-        });
         BufferGeometryUtils.computeMikkTSpaceTangents(child.geometry); // optional
         BufferGeometryUtils.computeVertexNormalsWithAreaWeight(
             child.geometry, THREE.MathUtils.degToRad(60));
@@ -109,12 +123,12 @@ loader.load(
       }
       if (child.isLine) {
         child.material = lineMat;
-        child.renderOrder         = 999;     // ensure they render last
+        child.renderOrder = 1;
       }
     });
     scene.add(model);
-
-   frameOrthoIsometric(camera, controls, model);
+    frameOrthoIsometric(camera, controls, model);
+    updateCamera();
   },
   undefined,
   (error) => {

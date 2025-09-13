@@ -45,15 +45,35 @@ def load_edges():
   with open("edges.json", "w") as f:
     json.dump(response, f, indent=2)
 
-def load_assembly():
-  eid = "d2f73f6396ee11d44c08fc80"
+def load_assembly(configuration=None):
+  params = {}
+  if configuration is not None:
+     params["configuration"] = configuration
+  print(params)
   response = onshape_request(
-     f"https://cad.onshape.com/api/assemblies/d/{did}/{wvm}/{wvmid}/e/{eid}/")
+     f"https://cad.onshape.com/api/assemblies/d/{did}/{wvm}/{wvmid}/e/{eid}/",
+     params=params
+  )
   with open("assembly.json", "w") as f:
     json.dump(response, f, indent=2)
 
+def get_theta_param_id():
+    url = f"https://cad.onshape.com/api/v6/elements/d/{did}/{wvm}/{wvmid}/e/{eid}/configuration"
+    cfg = onshape_request(url)
+    print(cfg)
+    for p in cfg.get("configurationParameters", []):
+        if p.get("parameterName") == "thetaDeg":
+            return p["parameterId"]
+    raise RuntimeError("thetaDeg not found")
 
-document = "https://cad.onshape.com/documents/ebc9190f428cf30153c06148/w/8e27fa4d26837b5b136fb4a1/e/33dad662390f17467ffd6740"
+def encode_theta(param_id, deg):
+    url = f"https://cad.onshape.com/api/v6/elements/d/{did}/e/{eid}/configurationencodings"
+    body = {"parameters":[{"parameterId": param_id, "parameterValue": f"{deg} degree"}]}
+    r = requests.post(url, json=body, auth=(access_key, secret_key), headers=headers)
+    r.raise_for_status()
+    return r.json()["encodedId"]
+
+document = "https://cad.onshape.com/documents/ebc9190f428cf30153c06148/w/8e27fa4d26837b5b136fb4a1/e/d2f73f6396ee11d44c08fc80"
 chunks = document.split('/')
 did = chunks[chunks.index("documents") + 1]
 wvm = "w"
@@ -131,7 +151,7 @@ def load_parts():
 
     #if inst['name'] != "BEAM <1>":
     #  continue
-    print(f"{inst['name']} {part_id}")
+    # print(f"{inst['name']} {part_id}")
 
     matrix44 = np.asarray(occ['transform'], float).reshape(4, 4)
     scene.add_geometry(scene.geometry[part_id], transform=matrix44, node_name=f"{part_id}_{idx}")
@@ -144,5 +164,13 @@ def load_parts():
 #load_edges()
 #load_faces()
 # load_part_studio_features()
-# load_assembly()
+#load_assembly()
+
+
+def sample_at_angle(angle):
+  theta_param_id = get_theta_param_id()
+  encoded_config = encode_theta(theta_param_id, angle)
+  load_assembly(encoded_config)
+
+sample_at_angle(180.0)
 load_parts()

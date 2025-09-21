@@ -66,6 +66,25 @@ lineMat.onBeforeCompile = function (shader) {
 const tex_loader = new THREE.TextureLoader();
 const BASE = import.meta.env.BASE_URL || '/';
 
+const DEFAULT_OWNER = 'garylinscott';
+const DEFAULT_REPO = 'stationary_engine_tutorial';
+const owner = import.meta.env.VITE_GITHUB_OWNER ?? DEFAULT_OWNER;
+const repo = import.meta.env.VITE_GITHUB_REPO ?? DEFAULT_REPO;
+const tagConfig = import.meta.env.VITE_ASSET_TAG ?? 'latest';
+const explicitAssetBase = import.meta.env.VITE_ASSET_BASE_URL;
+const isLocalhost = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+
+const ASSET_BASE = (() => {
+  if (explicitAssetBase) {
+    return explicitAssetBase.endsWith('/') ? explicitAssetBase : `${explicitAssetBase}/`;
+  }
+  if (import.meta.env.DEV || isLocalhost) {
+    return `${BASE}assets/`;
+  }
+  const tagPath = tagConfig === 'latest' ? 'latest/download' : `download/${tagConfig}`;
+  return `https://github.com/${owner}/${repo}/releases/${tagPath}/`;
+})();
+
 const matcapTex   = tex_loader.load(`${BASE}assets/onshape-matcap-128.png`);
 matcapTex.colorSpace = THREE.SRGBColorSpace;
 
@@ -106,6 +125,37 @@ dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/'); // Use
 
 const loader = new GLTFLoader();
 loader.setDRACOLoader(dracoLoader);
+loader.setCrossOrigin('anonymous');
+
+async function fetchMotionJson() {
+  const gzUrl = `${ASSET_BASE}motion.json.gz`;
+  const tryLocalPlain = import.meta.env.DEV || isLocalhost;
+  let lastError;
+  if (typeof DecompressionStream !== 'undefined') {
+    try {
+      const response = await fetch(gzUrl);
+      if (response.ok && response.body) {
+        const stream = response.body.pipeThrough(new DecompressionStream('gzip'));
+        const text = await new Response(stream).text();
+        return JSON.parse(text);
+      }
+    } catch (err) {
+      console.warn('Gzipped motion load failed, falling back to JSON:', err);
+      lastError = err;
+    }
+  }
+
+  if (tryLocalPlain) {
+    const fallbackResponse = await fetch(`${ASSET_BASE}motion.json`);
+    if (!fallbackResponse.ok) {
+      throw new Error(`Failed to load motion.json (status ${fallbackResponse.status})`);
+    }
+    return fallbackResponse.json();
+  }
+
+  console.error('Unable to load motion.json.gz and no fallback available.', lastError);
+  throw new Error('Motion data requires a browser with `DecompressionStream` support.');
+}
 
 const player = new MotionPlayer(scene);
 let playing = true;
@@ -114,7 +164,7 @@ const playSpeed = 0.2; // cycles per second
 const clock = new THREE.Clock();
 
 loader.load(
-  `${BASE}assets/edges.glb`,
+  `${ASSET_BASE}edges.glb`,
   (gltf) => {
     let model = gltf.scene;
     model.traverse((child) => {
@@ -133,8 +183,8 @@ loader.load(
     updateCamera();
 
     Promise.all([
-      fetch(`${BASE}assets/occ2node.json`).then(r => r.json()),
-      fetch(`${BASE}assets/motion.json`).then(r => r.json()),
+      fetch(`${ASSET_BASE}occ2node.json`).then(r => r.json()),
+      fetchMotionJson(),
     ]).then(([occ2node, motion]) => {
       player.attachOcc2Node(occ2node);
       player.loadMotion(motion);

@@ -26,6 +26,37 @@ export class MotionPlayer {
 
   loadMotion(motion) {
     this.motion = motion;
+    const matrixTable = Array.isArray(motion.matrixTable)
+      ? motion.matrixTable
+      : Array.isArray(motion.matrices)
+        ? motion.matrices
+        : null;
+    const resolveMatrix = (value, occKey) => {
+      if (Array.isArray(value)) return value;
+      if (typeof value === 'number' && matrixTable) {
+        const resolved = matrixTable[value];
+        if (!resolved) {
+          console.warn(`MotionPlayer: missing matrixTable entry ${value} for ${occKey}`);
+        }
+        return resolved;
+      }
+      if (typeof value === 'number') {
+        console.warn('MotionPlayer: matrix index without matrixTable', occKey, value);
+      }
+      return undefined;
+    };
+
+    if (matrixTable) this.matrixTable = matrixTable;
+    else this.matrixTable = undefined;
+
+    motion.frames.forEach((frame) => {
+      Object.entries(frame.occurrences).forEach(([occKey, value]) => {
+        const resolved = resolveMatrix(value, occKey);
+        if (resolved) frame.occurrences[occKey] = resolved;
+        else delete frame.occurrences[occKey];
+      });
+    });
+
     // Precompute decomposed transforms (pos/quaternion/scale) for each occurrence & frame
     const tmpM = new THREE.Matrix4();
     const p = new THREE.Vector3();

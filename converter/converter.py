@@ -1,5 +1,6 @@
 import argparse
 import base64
+import gzip
 import json
 import os
 import sys
@@ -98,6 +99,19 @@ def _sanitize(name: str) -> str:
   return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
 
 
+MATRIX_DECIMALS = 6
+
+
+def _quantize_float(value: float, decimals: int = MATRIX_DECIMALS) -> float:
+  rounded = round(float(value), decimals)
+  # Avoid -0.0 to minimize serialized size and prevent surprises when hashing
+  return 0.0 if rounded == -0.0 else rounded
+
+
+def _quantize_matrix(mat: np.ndarray) -> Tuple[float, ...]:
+  # Flatten row-major and quantize each entry for stable hashing / storage
+  return tuple(_quantize_float(v) for v in mat.flatten())
+
 def build_scene_and_occmap(assembly: dict, faces: List[dict], edges: List[dict]) -> Tuple[trimesh.Scene, Dict[str, Dict[str, str]]]:
   scene = trimesh.Scene()
 
@@ -166,19 +180,28 @@ def build_scene_and_occmap(assembly: dict, faces: List[dict], edges: List[dict])
 
 def sample_motion(angles_deg: List[float]) -> dict:
   frames = []
+  matrix_table: List[Tuple[float, ...]] = []
+  matrix_lookup: Dict[Tuple[float, ...], int] = {}
   theta_param_id = get_theta_param_id()
   for angle in angles_deg:
     encoded_config = encode_theta(theta_param_id, angle)
     asm = fetch_assembly(configuration=encoded_config)
-    frame = {"angleDeg": angle, "occurrences": {}}
+    frame_occurrences: Dict[str, int] = {}
     for occ in asm["rootAssembly"]["occurrences"]:
       key = "/".join(occ["path"])
       m = np.asarray(occ["transform"], float).reshape(4, 4)
-      frame["occurrences"][key] = m.flatten().tolist()
-    frames.append(frame)
+      quantized = _quantize_matrix(m)
+      idx = matrix_lookup.get(quantized)
+      if idx is None:
+        idx = len(matrix_table)
+        matrix_lookup[quantized] = idx
+        matrix_table.append(quantized)
+      frame_occurrences[key] = idx
+    frames.append({"angleDeg": angle, "occurrences": frame_occurrences})
   return {
     "metadata": {"did": did, "wvm": wvm, "wvmid": wvmid, "eid": eid},
     "anglesDeg": angles_deg,
+    "matrixTable": [list(vals) for vals in matrix_table],
     "frames": frames,
   }
 
@@ -267,10 +290,14 @@ def main():
     json.dump(occ2node, f, indent=2)
 
   motion = sample_motion(angles)
-  with open(os.path.join(out_dir, "motion.json"), "w") as f:
-    json.dump(motion, f, indent=2)
+  motion_path = os.path.join(out_dir, "motion.json")
+  motion_str = json.dumps(motion, separators=(",", ":"))
+  with open(motion_path, "w") as f:
+    f.write(motion_str)
+  with gzip.open(f"{motion_path}.gz", "wt", encoding="utf-8") as f:
+    f.write(motion_str)
 
-  print(f"Wrote: {out_dir}/edges.glb, {out_dir}/occ2node.json, {out_dir}/motion.json")
+  print(f"Wrote: {out_dir}/edges.glb, {out_dir}/occ2node.json, {out_dir}/motion.json (+ .gz)")
 
 
 if __name__ == "__main__":

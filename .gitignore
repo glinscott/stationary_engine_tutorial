@@ -1,0 +1,8 @@
+out/
+converter/assembly.json
+converter/edges.glb
+converter/edges.json
+converter/faces.json
+converter/features.json
+vite-engine/public/assets/*
+!vite-engine/public/assets/README.md

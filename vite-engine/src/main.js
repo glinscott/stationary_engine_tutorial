@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { MotionPlayer } from './motionPlayer.js';
 
 // import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -63,8 +64,9 @@ lineMat.onBeforeCompile = function (shader) {
 };
 
 const tex_loader = new THREE.TextureLoader();
+const BASE = import.meta.env.BASE_URL || '/';
 
-const matcapTex   = tex_loader.load('/assets/onshape-matcap-128.png');
+const matcapTex   = tex_loader.load(`${BASE}assets/onshape-matcap-128.png`);
 matcapTex.colorSpace = THREE.SRGBColorSpace;
 
 const material = new THREE.MeshMatcapMaterial({
@@ -105,20 +107,20 @@ dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/'); // Use
 const loader = new GLTFLoader();
 loader.setDRACOLoader(dracoLoader);
 
+const player = new MotionPlayer(scene);
+let playing = true;
+let tNorm = 0;
+const playSpeed = 0.2; // cycles per second
+const clock = new THREE.Clock();
+
 loader.load(
-  '/assets/edges.glb', // Update this path to your actual GLB file
+  `${BASE}assets/edges.glb`,
   (gltf) => {
     let model = gltf.scene;
     model.traverse((child) => {
       if (child.isMesh) {
         child.material = material;
         child.renderOrder = 0;
-        /*
-        BufferGeometryUtils.computeMikkTSpaceTangents(child.geometry); // optional
-        BufferGeometryUtils.computeVertexNormalsWithAreaWeight(
-            child.geometry, THREE.MathUtils.degToRad(60));
-        */
-
         child.geometry.computeVertexNormals();
       }
       if (child.isLine) {
@@ -129,6 +131,47 @@ loader.load(
     scene.add(model);
     frameOrthoIsometric(camera, controls, model);
     updateCamera();
+
+    Promise.all([
+      fetch(`${BASE}assets/occ2node.json`).then(r => r.json()),
+      fetch(`${BASE}assets/motion.json`).then(r => r.json()),
+    ]).then(([occ2node, motion]) => {
+      player.attachOcc2Node(occ2node);
+      player.loadMotion(motion);
+      player.setFrameByIndex(0);
+
+      // Debug: compare frame 0 matrices to current to detect transpose issues
+      try {
+        const fr0 = motion.frames[0];
+        const tmp = new THREE.Matrix4();
+        let checked = 0, within = 0;
+        Object.entries(occ2node).forEach(([occKey, names]) => {
+          const solid = scene.getObjectByName(names.solid);
+          const arr = fr0.occurrences[occKey];
+          if (!solid || !arr) return;
+          tmp.fromArray(arr).transpose();
+          const a = tmp.elements;
+          const b = solid.matrix.elements;
+          let maxd = 0;
+          for (let i=0;i<16;i++) maxd = Math.max(maxd, Math.abs(a[i]-b[i]));
+          checked++;
+          if (maxd < 1e-6) within++;
+        });
+        console.log(`Motion debug: compared ${checked} nodes, ${within} within tolerance to frame 0.`);
+      } catch (e) {}
+
+      const btns = document.querySelectorAll('[data-frame]');
+      btns.forEach(btn => btn.addEventListener('click', () => {
+        const i = Number(btn.dataset.frame);
+        player.setFrameByIndex(i);
+      }));
+
+      window.addEventListener('keydown', (e) => {
+        if (e.key === '1') player.setFrameByIndex(0);
+        if (e.key === '2') player.setFrameByIndex(1);
+        if (e.key === '3') player.setFrameByIndex(2);
+      });
+    }).catch(err => console.warn('Motion assets not loaded:', err));
   },
   undefined,
   (error) => {
@@ -142,6 +185,14 @@ function animate() {
   requestAnimationFrame(animate);
 
   controls.update();
+  // advance interpolation if playing
+  if (playing) {
+    const dt = clock.getDelta();
+    tNorm = (tNorm + dt * playSpeed) % 1;
+    player.setNormalizedT(tNorm);
+    const slider = document.getElementById('t-slider');
+    if (slider) slider.value = String(tNorm);
+  }
   renderer.render(scene, camera);
 }
 
@@ -163,4 +214,26 @@ function updateCamera() {
 window.addEventListener('resize', () => {
   updateCamera();
   renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// UI wiring for interpolation controls after DOM is ready
+window.addEventListener('DOMContentLoaded', () => {
+  const slider = document.getElementById('t-slider');
+  const playBtn = document.getElementById('play-toggle');
+  if (slider) {
+    slider.addEventListener('input', (e) => {
+      const v = Number(e.target.value);
+      tNorm = v;
+      playing = false;
+      player.setNormalizedT(tNorm);
+    });
+  }
+  if (playBtn) {
+    playBtn.addEventListener('click', () => {
+      playing = !playing;
+      if (playing) clock.getDelta(); // reset delta when resuming
+      playBtn.textContent = playing ? 'Pause' : 'Play';
+    });
+    playBtn.textContent = playing ? 'Pause' : 'Play';
+  }
 });

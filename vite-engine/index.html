@@ -11,5 +11,16 @@
     <script type="module" src="/src/main.js"></script>
 </head>
 <body id="app">
+<div id="motion-test" style="position:fixed;top:12px;left:12px;background:#fff8;padding:6px 8px;border-radius:8px;font:12px/1.4 system-ui;z-index:10">
+  <button data-frame="0">Frame 1</button>
+  <button data-frame="1">Frame 2</button>
+  <button data-frame="2">Frame 3</button>
+  <span style="margin-left:8px;color:#555">(or press 1/2/3)</span>
+  <div style="margin-top:6px;display:flex;gap:8px;align-items:center">
+    <label>Interpolate</label>
+    <input id="t-slider" type="range" min="0" max="1" step="0.001" value="0" />
+    <button id="play-toggle">Play</button>
+  </div>
+  </div>
 </body>
 </html>

@@ -66,11 +66,6 @@ lineMat.onBeforeCompile = function (shader) {
 const tex_loader = new THREE.TextureLoader();
 const BASE = import.meta.env.BASE_URL || '/';
 
-const DEFAULT_OWNER = 'garylinscott';
-const DEFAULT_REPO = 'stationary_engine_tutorial';
-const owner = import.meta.env.VITE_GITHUB_OWNER ?? DEFAULT_OWNER;
-const repo = import.meta.env.VITE_GITHUB_REPO ?? DEFAULT_REPO;
-const tagConfig = import.meta.env.VITE_ASSET_TAG ?? 'latest';
 const explicitAssetBase = import.meta.env.VITE_ASSET_BASE_URL;
 const isLocalhost = typeof window !== 'undefined' && window.location.hostname === 'localhost';
 
@@ -78,11 +73,8 @@ const ASSET_BASE = (() => {
   if (explicitAssetBase) {
     return explicitAssetBase.endsWith('/') ? explicitAssetBase : `${explicitAssetBase}/`;
   }
-  if (import.meta.env.DEV || isLocalhost) {
-    return `${BASE}assets/`;
-  }
-  const tagPath = tagConfig === 'latest' ? 'latest/download' : `download/${tagConfig}`;
-  return `https://github.com/${owner}/${repo}/releases/${tagPath}/`;
+  const localBase = `${BASE}assets/`;
+  return localBase;
 })();
 
 const matcapTex   = tex_loader.load(`${BASE}assets/onshape-matcap-128.png`);

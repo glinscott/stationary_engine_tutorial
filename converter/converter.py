@@ -249,6 +249,7 @@ def main():
     with open("faces.json") as f:
       faces = json.load(f)
   else:
+    faces = []
     for ps_eid in ids:
       f = onshape_request(
         f"https://cad.onshape.com/api/partstudios/d/{did}/{wvm}/{wvmid}/e/{ps_eid}/tessellatedfaces",
